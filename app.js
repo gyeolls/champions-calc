@@ -41,10 +41,18 @@ const TYPE_ITEM = {"Charcoal":"Fire","Mystic Water":"Water","Magnet":"Electric",
 "Twisted Spoon":"Psychic","Silver Powder":"Bug","Hard Stone":"Rock","Spell Tag":"Ghost","Dragon Fang":"Dragon",
 "Black Glasses":"Dark","Metal Coat":"Steel","Silk Scarf":"Normal","Fairy Feather":"Fairy"};
 
+// 반감열매: 해당 타입의 효과굉장 데미지 0.5배 (시몬열매는 노말 무조건)
+const RESIST_BERRY = {"Occa Berry":"Fire","Passho Berry":"Water","Wacan Berry":"Electric","Rindo Berry":"Grass",
+"Yache Berry":"Ice","Chople Berry":"Fighting","Kebia Berry":"Poison","Shuca Berry":"Ground","Coba Berry":"Flying",
+"Payapa Berry":"Psychic","Tanga Berry":"Bug","Charti Berry":"Rock","Kasib Berry":"Ghost","Haban Berry":"Dragon",
+"Colbur Berry":"Dark","Babiri Berry":"Steel","Chilan Berry":"Normal","Roseli Berry":"Fairy"};
+
 const MULTI_HIT = {"Icicle Spear":1,"Rock Blast":1,"Bullet Seed":1,"Pin Missile":1,"Scale Shot":1,"Water Shuriken":1,
 "Bone Rush":1,"Tail Slap":1,"Arm Thrust":1,"Fury Swipes":1,"Double Hit":2,"Dual Wingbeat":2,"Dragon Darts":2,
 "Twineedle":2,"Bonemerang":2,"Double Kick":2,"Dual Chop":2,"Gear Grind":2,"Tachyon Cutter":2,"Twin Beam":2,
-"Triple Dive":3,"Surging Strikes":3,"Triple Axel":3,"Triple Kick":3,"Population Bomb":10};
+"Triple Dive":3,"Surging Strikes":3,"Population Bomb":10};
+// 위력이 타수마다 오르는 연속기: 타별 개별 표기
+const ASCEND_HIT = {"Triple Axel":[20,40,60],"Triple Kick":[10,20,30]};
 
 // ===== 이름 인덱스 =====
 // 검색 목록 = 대표(기본) 폼만. 리전폼/특성폼(알로라 나인테일, 돌핀맨 마이티 등)은
@@ -101,6 +109,7 @@ function resolveToBase(id){ // 특정 폼 id → {species(대표), forme}
 }
 const koToMove = {};
 for (const [id,m] of Object.entries(DB.moves)) koToMove[m.ko]=id;
+koToMove["앵콜"]="Encore"; // 구표기 별칭 (기존 저장 파티/OCR 호환)
 const koToAbility = {};
 for (const [id,ko] of Object.entries(DB.abilities)) koToAbility[ko]=id;
 const koToItem = {};
@@ -149,14 +158,14 @@ for(const k of Object.keys(DB.usage))DB.usage[k].it=mergeMegaItems(DB.usage[k].i
 // ===== 상태 =====
 const state = {
   weather:"none", terrain:"none", crit:false,
-  opp:{species:null,forme:"",ability:"",item:"",nature:"Serious",pts:{hp:0,atk:0,def:0,spa:0,spd:0,spe:0},
+  opp:{species:null,forme:"",ability:"",item:"",nature:"Serious",curType:"",pts:{hp:0,atk:0,def:0,spa:0,spd:0,spe:0},
        boosts:{atk:0,def:0,spa:0,spd:0,spe:0},burn:false,screen:false},
   oppTeam:[null,null,null,null,null,null],
   parties:[{name:"파티 1",mons:[null,null,null,null,null,null]}],
   activeParty:0, meSel:0,
 };
 function newMon(species){
-  return {species,forme:"",ability:"",item:"",nature:"Serious",
+  return {species,forme:"",ability:"",item:"",nature:"Serious",curType:"",
     pts:{hp:0,atk:0,def:0,spa:0,spd:0,spe:0},boosts:{atk:0,def:0,spa:0,spd:0,spe:0},
     burn:false,screen:false,moves:["","","",""]};
 }
@@ -331,6 +340,17 @@ function formeOptions(baseId){
 function grounded(side){
   return !side.types.includes("Flying")&&side.ability!=="Levitate"&&side.item!=="Air Balloon";
 }
+function matchMoveLoose(t){ // 앞뒤에 붙은 노이즈 글자를 잘라내며 기술 매칭 재시도
+  if(!t)return null;
+  const cands=[t];
+  if(t.length>=3){cands.push(t.slice(1),t.slice(0,-1));}
+  if(t.length>=4){cands.push(t.slice(2),t.slice(1,-1));}
+  for(const c of cands){
+    const id=fuzzyFind(c,koToMove);
+    if(id)return id;
+  }
+  return null;
+}
 function fuzzyFind(txt,dict){ // dict: ko -> id
   if(dict[txt])return dict[txt];
   if(txt.length<2)return null;
@@ -430,7 +450,10 @@ function calcDamage(atk,def,moveId){
   if(state.terrain==="grassy"&&["Earthquake","Bulldoze","Magnitude"].includes(moveId)){mod*=0.5;notes.push("그래스필드 반감");}
   if(def.screen&&!state.crit)mod*=0.5;
   if(state.crit)mod*=1.5;
-  const stab=atk.types.includes(mv.t)?(atk.ability==="Adaptability"?2:1.5):1;
+  // 변환자재/리베로: 모든 기술이 자속
+  const protean=atk.ability==="Protean"||atk.ability==="Libero";
+  const stab=(protean||atk.types.includes(mv.t))?(atk.ability==="Adaptability"?2:1.5):1;
+  if(protean&&!atk.types.includes(mv.t))notes.push("변환자재 자속");
   const burnMod=(atk.burn&&mv.c==="Physical"&&atk.ability!=="Guts"&&moveId!=="Facade")?0.5:1;
   let post=1;
   if(atk.ability==="Tinted Lens"&&eff<1)post*=2;
@@ -441,16 +464,47 @@ function calcDamage(atk,def,moveId){
   if(dAb==="Fluffy"){if(mv.ct)post*=0.5;if(mv.t==="Fire")post*=2;}
   if(atk.item==="Life Orb")post*=1.3;
   if(atk.item==="Expert Belt"&&eff>1)post*=1.2;
+  // 반감열매: 계산에는 미적용, 경고만 표시 (1회용이라 발동 여부 불확실)
+  const rbType=RESIST_BERRY[def.item];
+  if(rbType===mv.t&&(eff>1||rbType==="Normal"))
+    notes.push("⚠ "+(DB.items[def.item]?DB.items[def.item].ko:def.item)+" 발동 시 반감");
+  // 변환자재/리베로: 현재 속성 미지정 시에만 경고 (지정 시 해당 타입으로 계산됨)
+  if((dAb==="Protean"||dAb==="Libero")&&!(def.cfg&&def.cfg.curType))
+    notes.push("⚠ 변환자재: '현재 속성'을 지정하면 정확히 계산돼요");
+  else if((dAb==="Protean"||dAb==="Libero")&&def.cfg&&def.cfg.curType)
+    notes.push("현재 속성 "+(DB.typesKo[def.cfg.curType]||def.cfg.curType)+" 기준");
 
   const dmg=r=>Math.max(1,Math.floor(Math.floor(Math.floor(Math.floor(Math.floor(pm(base,mod)*r/100)*stab)*eff)*burnMod)*post));
-  let min=dmg(85),max=dmg(100);
-  const perRoll=Array.from({length:16},(_,i)=>dmg(85+i));
-  let hits=MULTI_HIT[moveId];
-  if(hits!==undefined){
-    if(hits===1)notes.push("연속기 2~5회 (1회당 표시)");
-    else{min*=hits;max*=hits;notes.push(hits+"회 연속기 합산");}
+  let min,max,perRoll,hitParts=null;
+  const asc=ASCEND_HIT[moveId];
+  if(asc){ // 트리플악셀류: 타별 위력(20/40/60 등)으로 개별 계산
+    const per=asc.map(hp2=>{
+      const b2=Math.floor(Math.floor(Math.floor(2*50/5+2)*Math.max(1,pm(hp2,pMod))*A/D)/50)+2;
+      const d2=r=>Math.max(1,Math.floor(Math.floor(Math.floor(Math.floor(Math.floor(pm(b2,mod)*r/100)*stab)*eff)*burnMod)*post));
+      return {min:d2(85),max:d2(100),d2};
+    });
+    min=per.reduce((a,x)=>a+x.min,0);max=per.reduce((a,x)=>a+x.max,0);
+    perRoll=Array.from({length:16},(_,i)=>per.reduce((a,x)=>a+x.d2(85+i),0));
+    hitParts=per.map(x=>({min:x.min,max:x.max}));
+    let cum=0;
+    notes.push(per.map((x,i)=>{cum+=x.max;return `${i+1}타 ${x.min}~${x.max}(누적~${cum})`;}).join(" · "));
+    if(mv.ac)notes.push("각 타 명중 "+mv.ac+"%");
+  }else{
+    min=dmg(85);max=dmg(100);
+    perRoll=Array.from({length:16},(_,i)=>dmg(85+i));
+    const hits=MULTI_HIT[moveId];
+    if(hits!==undefined){
+      if(hits===1)notes.push("연속기 2~5회 (1회당 표시)");
+      else{
+        hitParts=Array.from({length:hits},()=>({min,max}));
+        notes.push(hits+"회 합산 · 1회당 "+min+"~"+max);
+        min*=hits;max*=hits;
+      }
+    }
   }
-  return {min,max,eff,mv,notes,perRoll};
+  // 기합의띠: 만피 확정 1타여도 1회 버팀
+  if(def.item==="Focus Sash"&&min>=def.st.hp)notes.push("기합의띠: 만피 시 1회 버팀");
+  return {min,max,eff,mv,notes,perRoll,hitParts};
 }
 function koText(res,hp){
   if(!res||res.max===0)return {t:"무효",c:"ko3"};
@@ -461,10 +515,13 @@ function koText(res,hp){
   if(nMax===nMin)return {t:`확정 ${nMax}타`,c:nMax===2?"ko2":"ko3"};
   return {t:`난수 ${nMax}타`,c:nMax===2?"ko2":"ko3"};
 }
+const isProtean=ab=>ab==="Protean"||ab==="Libero";
 function buildSide(cfg){
   const spec=effSpecies(cfg);if(!spec)return null;
   const c=cre(spec);
-  return {c,types:c.types,st:calcStats(c,cfg.nature,cfg.pts),ability:cfg.ability,
+  // 변환자재/리베로 + 현재 속성 지정 시: 해당 단일 타입으로 수비 상성 계산
+  const types=(isProtean(cfg.ability)&&cfg.curType)?[cfg.curType]:c.types;
+  return {c,types,st:calcStats(c,cfg.nature,cfg.pts),ability:cfg.ability,
     item:cfg.item,boosts:cfg.boosts,burn:cfg.burn,screen:false,cfg};
 }
 
@@ -523,7 +580,40 @@ function applyOppUsageDefaults(){
   o.ability=u.ab[0]?u.ab[0][0]:"";o.item=u.it[0]?u.it[0][0]:"";o.nature=u.na[0]?u.na[0][0]:"Serious";
   o.pts={hp:0,atk:0,def:0,spa:0,spd:0,spe:0};
   if(u.sp[0])for(const[k,s]of Object.entries(u.sp[0][0]))o.pts[SPKEY[k]]=s;
+  o.curType="";
   // 기본 폼 우선: 메가스톤이 1위여도 자동 메가진화하지 않음
+}
+// ===== 현재 속성 (변환자재/리베로) =====
+function renderCurTypeRow(side){ // 'opp' | 'my'
+  const cfg=side==="opp"?state.opp:mySel();
+  const row=$(side+"CurTypeRow"),btn=$(side+"CurType");
+  if(!cfg||!isProtean(cfg.ability)){row.style.display="none";if(cfg)cfg.curType="";return;}
+  row.style.display="";
+  if(cfg.curType){
+    btn.innerHTML=`<span class="tb" style="background:${TYPE_COLORS[cfg.curType]}">${DB.typesKo[cfg.curType]}</span>`;
+  }else btn.textContent="원래 타입";
+}
+let typePickTarget=null;
+function openTypePicker(side){
+  typePickTarget=side;
+  const g=$("typeGrid");g.innerHTML="";
+  const cfg=side==="opp"?state.opp:mySel();
+  for(const t of Object.keys(CHART)){
+    const b=document.createElement("button");
+    b.className="btn";
+    b.style.background=TYPE_COLORS[t];b.style.color="#fff";b.style.borderColor="transparent";
+    if(cfg&&cfg.curType===t)b.style.outline="2px solid var(--tx)";
+    b.textContent=DB.typesKo[t]||t;
+    b.onclick=()=>{pickCurType(t);};
+    g.appendChild(b);
+  }
+  $("typeModal").classList.add("on");
+}
+function pickCurType(t){
+  const cfg=typePickTarget==="opp"?state.opp:mySel();
+  if(cfg){cfg.curType=t;if(typePickTarget!=="opp")save();}
+  $("typeModal").classList.remove("on");
+  if(typePickTarget==="opp")renderOpp();else renderMy();
 }
 function renderOppTeam(){
   const el=$("oppTeam");el.innerHTML="";
@@ -551,7 +641,6 @@ function renderOpp(){
   const live=u&&u._src?` · 실시간 ${u._src}`:"";
   $("oppName").innerHTML=c.ko+(o.forme?" ("+formeLabel(o.forme)+")":"")+`<span class="small">${live}</span>`;
   $("oppImg").src=spriteUrl(c);
-  typeBadges($("oppTypes"),c.types);
   statBars($("oppStats"),c,calcStats(c,o.nature,o.pts));
   fillSelect($("oppForm"),formeOptions(o.species),o.forme||o.species);
   const pct=v=>` (${v}%)`;
@@ -561,6 +650,9 @@ function renderOpp(){
     if(!abList.find(x=>x[0]===o.ability))o.ability=ma[0]||o.ability;}
   if(!abList.find(x=>x[0]===o.ability))o.ability=abList[0]?abList[0][0]:"";
   fillSelect($("oppAb"),abList,o.ability);
+  // 특성 확정 후에 타입 배지/현재속성 행 렌더 (메가 폼 특성 반영)
+  typeBadges($("oppTypes"),(isProtean(o.ability)&&o.curType)?[o.curType]:c.types);
+  renderCurTypeRow("opp");
   renderItemBtn($("oppItemBtn"),o.item,u,o);
   fillSelect($("oppNat"),u?u.na.map(([n,p])=>[n,natLabel(n)+pct(p)]):Object.keys(DB.natures).map(n=>[n,natLabel(n)]),o.nature);
   fillSelect($("oppSp"),u?u.sp.map(([sp,p],i)=>[i,spLabel(sp)+pct(p)]):[[0,"무보정"]],0);
@@ -745,20 +837,35 @@ function renderMy(){
   $("myName").textContent=c.ko+(m.forme?" ("+formeLabel(m.forme)+")":"");
   $("myImg").src=spriteUrl(c);
   $("mySearch").value=bc._label||bc.ko;
-  typeBadges($("myTypes"),c.types);
   statBars($("myStats"),c,calcStats(c,m.nature,m.pts));
   fillSelect($("myForm"),formeOptions(m.species),m.forme||m.species);
   const abs=Object.values(c.ab).map(a=>[a,DB.abilities[a]||a]);
   if(!m.ability||!abs.find(x=>x[0]===m.ability))m.ability=abs[0]?abs[0][0]:"";
   fillSelect($("myAb"),abs,m.ability);
+  // 특성 확정 후에 타입 배지/현재속성 행 렌더 (메가 폼 특성 반영)
+  typeBadges($("myTypes"),(isProtean(m.ability)&&m.curType)?[m.curType]:c.types);
+  renderCurTypeRow("my");
   renderItemBtn($("myItemBtn"),m.item,null,m);
   $("myNatBtn").textContent=natLabel(m.nature);
   const pts=$("myPts");pts.innerHTML="";
+  const ptsTotal=()=>STATS.reduce((a,s)=>a+(m.pts[s]||0),0);
+  const updateTotal=()=>{
+    const t=ptsTotal();
+    const el=$("myPtsTotal");
+    el.textContent=t+"/66";
+    el.style.color=t>66?"var(--red)":t===66?"var(--grn)":"var(--tx2)";
+  };
+  updateTotal();
   for(const s of STATS){
     const d=document.createElement("div");
     d.innerHTML=`<label>${STAT_KO_M[s]}</label>`;
     const inp=document.createElement("input");inp.type="number";inp.min=0;inp.max=32;inp.value=m.pts[s]||0;
-    inp.onchange=()=>{m.pts[s]=Math.max(0,Math.min(32,+inp.value||0));save();renderMy();renderPartyPage();};
+    inp.onchange=()=>{
+      let v=Math.max(0,Math.min(32,+inp.value||0));
+      const others=ptsTotal()-(m.pts[s]||0);
+      if(others+v>66)v=Math.max(0,66-others); // 총합 66 초과 방지
+      m.pts[s]=v;save();renderMy();renderPartyPage();
+    };
     d.appendChild(inp);pts.appendChild(d);
   }
   if(m.moves.every(x=>!x)){
@@ -789,6 +896,7 @@ function mySpeed(){
   const st=calcStats(c,m.nature,m.pts);
   let s=pm(st.spe,boostMul(m.boosts.spe));
   if(m.item==="Choice Scarf")s=Math.floor(s*1.5);
+  if(m.item==="Iron Ball")s=Math.floor(s*0.5);
   const ab=m.ability,w=state.weather;
   if((ab==="Swift Swim"&&w==="rain")||(ab==="Chlorophyll"&&w==="sun")||(ab==="Sand Rush"&&w==="sand")||(ab==="Slush Rush"&&w==="snow"))s*=2;
   if($("twMy").checked)s*=2;
@@ -910,7 +1018,17 @@ function dmgRow(mv,res,hp,rate){
     dtxt=`${res.min}~${res.max} <span class="small">(${pmin.toFixed(1)}~${pmax.toFixed(1)}%)</span>`;
     const w=Math.min(100,pmax),w2=Math.min(100,pmin);
     const col=pmax>=100?"var(--red)":pmax>=50?"var(--yel)":"var(--grn)";
-    btxt=`<div class="dmgbar"><i style="width:${w}%;background:${col};opacity:.35"></i><i style="width:${w2}%;background:${col}"></i></div>`;
+    // 연속기: 타수 경계마다 얇은 눈금 (트리플악셀은 타별 데미지가 달라 간격이 다름)
+    let divs="";
+    if(res.hitParts&&res.hitParts.length>1){
+      let cum=0;
+      for(let i=0;i<res.hitParts.length-1;i++){
+        cum+=res.hitParts[i].max;
+        const p=cum/hp*100;
+        if(p<100)divs+=`<i class="dmgdiv" style="left:${p}%"></i>`;
+      }
+    }
+    btxt=`<div class="dmgbar"><i style="width:${w}%;background:${col};opacity:.35"></i><i style="width:${w2}%;background:${col}"></i>${divs}</div>`;
     ko=koText(res,hp);
   }
   const note=res&&res.notes&&res.notes.length?`<div class="small warn">${res.notes.join(" · ")}</div>`:"";
@@ -1048,7 +1166,17 @@ $("oppForm").onchange=e=>{
   if(idx>=0){state.oppTeam[idx]=o.forme||o.species;save();}
   renderOpp();
 };
-$("oppAb").onchange=e=>{state.opp.ability=e.target.value;renderResults();};
+$("oppAb").onchange=e=>{state.opp.ability=e.target.value;renderOpp();};
+$("oppCurType").onclick=()=>openTypePicker("opp");
+$("myCurType").onclick=()=>openTypePicker("my");
+$("typeReset").onclick=()=>{
+  const cfg=typePickTarget==="opp"?state.opp:mySel();
+  if(cfg){cfg.curType="";if(typePickTarget!=="opp")save();}
+  $("typeModal").classList.remove("on");
+  if(typePickTarget==="opp")renderOpp();else renderMy();
+};
+$("typeClose").onclick=()=>$("typeModal").classList.remove("on");
+$("typeModal").onclick=e=>{if(e.target.id==="typeModal")$("typeModal").classList.remove("on");};
 $("oppItemBtn").onclick=()=>{if(state.opp.species)openItemPicker("opp");};
 $("oppNat").onchange=e=>{state.opp.nature=e.target.value;renderOpp();};
 $("oppSp").onchange=e=>{
@@ -1072,7 +1200,7 @@ $("mySearch").addEventListener("change",e=>{
   }
 });
 $("myForm").onchange=e=>{const m=mySel();if(m){m.forme=e.target.value===m.species?"":e.target.value;save();renderMy();renderPartyPage();}};
-$("myAb").onchange=e=>{const m=mySel();if(m){m.ability=e.target.value;save();renderSpeed();renderResults();renderPartyPage();}};
+$("myAb").onchange=e=>{const m=mySel();if(m){m.ability=e.target.value;save();renderMy();renderPartyPage();}};
 $("myItemBtn").onclick=()=>{if(mySel())openItemPicker("my");};
 $("myNatBtn").onclick=openNatGrid;
 $("natClose").onclick=()=>$("natModal").classList.remove("on");
@@ -1208,11 +1336,28 @@ function scaleCanvas(cv,targetW){
   ctx.drawImage(cv,0,0,c2.width,c2.height);
   return c2;
 }
-function grayCanvas(c2){
+function grayCanvas(c2,normalize){
+  // 그레이스케일 (+옵션: 1~99% 퍼센타일 대비 스트레칭 — 스타일 폰트 OCR 향상)
   const g=document.createElement("canvas");g.width=c2.width;g.height=c2.height;
   const ctx=g.getContext("2d");ctx.drawImage(c2,0,0);
   const id=ctx.getImageData(0,0,g.width,g.height);const px=id.data;
-  for(let i=0;i<px.length;i+=4){const v=px[i]*.3+px[i+1]*.59+px[i+2]*.11;px[i]=px[i+1]=px[i+2]=v;}
+  const n=px.length/4;
+  const hist=new Uint32Array(256);
+  for(let i=0;i<px.length;i+=4){
+    const v=(px[i]*.3+px[i+1]*.59+px[i+2]*.11)|0;
+    px[i]=px[i+1]=px[i+2]=v;hist[v]++;
+  }
+  if(normalize){
+    let lo=0,hi=255,acc=0;
+    for(let v=0;v<256;v++){acc+=hist[v];if(acc>=n*0.01){lo=v;break;}}
+    acc=0;
+    for(let v=255;v>=0;v--){acc+=hist[v];if(acc>=n*0.01){hi=v;break;}}
+    const range=Math.max(1,hi-lo);
+    for(let i=0;i<px.length;i+=4){
+      const v=Math.max(0,Math.min(255,(px[i]-lo)*255/range));
+      px[i]=px[i+1]=px[i+2]=v;
+    }
+  }
   ctx.putImageData(id,0,0);
   return g;
 }
@@ -1294,21 +1439,33 @@ async function parsePartyImage(cv){
     const c2=scaleCanvas(cv,2400);
     const W=c2.width,H=c2.height;
     const colorData=c2.getContext("2d").getImageData(0,0,W,H);
-    pstatus("파티 화면 인식 중...");
-    const {data}=await worker.recognize(grayCanvas(c2),{},{text:true,blocks:true});
-    const words=wordsFrom(data).map(w=>({
-      t:norm(w.text),x0:w.bbox.x0,x1:w.bbox.x1,y0:w.bbox.y0,y1:w.bbox.y1,
-      yc:(w.bbox.y0+w.bbox.y1)/2,xc:(w.bbox.x0+w.bbox.x1)/2
-    })).filter(w=>w.t.length>=1);
-    const runs=mergeWords(words,W);
-    // 화면 구분: 스테이터스 화면에는 '공격/방어/스피드' 라벨이 카드마다 존재
-    const statCnt=runs.filter(r=>r.t==="공격"||r.t==="방어"||r.t==="스피드").length;
-    if(statCnt>=5)applyStatsScreen(runs,colorData,W,H);
-    else{
-      const cards=findPartyCards(runs,W,H);
-      if(!cards.length){pstatus("포켓몬 이름을 찾지 못했습니다. 능력/스테이터스 화면 전체가 보이게 캡처해주세요.");ocrBusy=false;return;}
-      applyAbilityScreen(cards,runs,W,H);
+    // 2패스 OCR: 대비강화 → 미인식 슬롯만 원본 그레이로 재시도 (폰트 인식 변동성 보완)
+    const applied=new Set();
+    let screenType=null,total=0;
+    for(const normalize of [true,false]){
+      if(applied.size>=6)break;
+      pstatus("파티 화면 인식 중..."+(normalize?"":" (2차 보완)"));
+      const {data}=await worker.recognize(grayCanvas(c2,normalize),{},{text:true,blocks:true});
+      const words=wordsFrom(data).map(w=>({
+        t:norm(w.text),x0:w.bbox.x0,x1:w.bbox.x1,y0:w.bbox.y0,y1:w.bbox.y1,
+        yc:(w.bbox.y0+w.bbox.y1)/2,xc:(w.bbox.x0+w.bbox.x1)/2
+      })).filter(w=>w.t.length>=1);
+      const runs=mergeWords(words,W);
+      if(screenType===null){
+        const statCnt=runs.filter(r=>r.t==="공격"||r.t==="방어"||r.t==="스피드").length;
+        screenType=statCnt>=5?"stats":"ability";
+      }
+      let slots=[];
+      if(screenType==="stats")slots=applyStatsScreen(runs,colorData,W,H,applied);
+      else{
+        const cards=findPartyCards(runs,W,H).filter(c=>!applied.has(c.slot));
+        slots=applyAbilityScreen(cards,runs,W,H);
+      }
+      slots.forEach(s=>applied.add(s));
+      total=applied.size;
     }
+    if(!total)pstatus("포켓몬을 찾지 못했습니다. 능력/스테이터스 화면 전체가 보이게 캡처해주세요.");
+    else pstatus((screenType==="stats"?"스테이터스":"능력")+" 화면 등록 완료: "+total+"마리"+(total<6?" (누락 슬롯은 카드 클릭으로 수동 등록)":""));
     save();renderPartyPage();renderMy();
   }catch(err){pstatus("인식 오류: "+err.message);}
   ocrBusy=false;
@@ -1399,19 +1556,21 @@ function findPartyCards(runs,W,H){
   return slotify(anchors,W,H,0.267); // 이름 행
 }
 function applyAbilityScreen(cards,runs,W,H){
-  let applied=0;
+  const applied=[];
   for(const card of cards){
     // 이름 행 포함(첫 기술이 이름과 같은 줄), 이름 런 자체는 제외
     const cardRuns=runs.filter(r=>r.yc>card.y0-H*0.01&&r.yc<card.yc+H*0.16&&
       r.x0>card.x0-W*0.03&&r.x0<card.x0+W*0.38&&
       !(r.x0===card.x0&&r.y0===card.y0));
     const split=card.x0+W*0.19;
+    // 라인 조립: 숫자 포함(10만볼트)과 숫자 제외(아이콘 노이즈 '9' 등) 두 버전 유지
     const lines=arr=>{
       const out=[];
       for(const w of arr.sort((a,b)=>a.yc-b.yc||a.x0-b.x0)){
+        if(w.t.length===1&&!/[가-힣0-9]/.test(w.t))continue; // 한 글자 비한글 노이즈
         const ln=out.find(l=>Math.abs(l.yc-w.yc)<H*0.016);
-        if(ln){ln.t+=w.t;}
-        else out.push({t:w.t,yc:w.yc});
+        if(ln){ln.t+=w.t;if(!/^\d+$/.test(w.t))ln.tn+=w.t;}
+        else out.push({t:w.t,tn:/^\d+$/.test(w.t)?"":w.t,yc:w.yc});
       }
       return out;
     };
@@ -1421,28 +1580,31 @@ function applyAbilityScreen(cards,runs,W,H){
       party().mons[card.slot]:newMon(card.id);
     mon.species=card.id;
     for(const l of lLines){
-      const ab=fuzzyFind(l.t,koToAbility);
+      const ab=fuzzyFind(l.tn,koToAbility)||fuzzyFind(l.t,koToAbility);
       if(ab&&!mon._gotAb){mon.ability=ab;mon._gotAb=1;continue;}
-      const it=fuzzyFind(l.t,koToItemScan);
+      // "~나이트 / ~나이트X / ~나이트Y" = 메가스톤 (DB에 한국어명 없는 스톤도 커버)
+      if(/나이트[A-Za-z]?$/.test(l.tn)&&l.tn.length>=4){mon.item="__mega";continue;}
+      const it=fuzzyFind(l.tn,koToItemScan)||fuzzyFind(l.t,koToItemScan);
       if(it)mon.item=normItem(it);
     }
     delete mon._gotAb;
     const mvs=[];
     for(const l of rLines){
-      const mid=fuzzyFind(l.t,koToMove);
+      // 숫자 포함 원문 우선(10만볼트), 실패 시 숫자 제거판(아이콘 노이즈 제거)
+      const mid=matchMoveLoose(l.t)||matchMoveLoose(l.tn);
       if(mid&&mvs.length<4&&!mvs.includes(DB.moves[mid].ko))mvs.push(DB.moves[mid].ko);
     }
     if(mvs.length){mon.moves=mvs;while(mon.moves.length<4)mon.moves.push("");}
     party().mons[card.slot]=mon;
-    applied++;
+    applied.push(card.slot);
   }
-  pstatus(applied?"능력 화면 등록 완료: "+applied+"마리 (특성·아이템·기술). 이어서 스테이터스 화면도 넣어주세요.":
-    "카드를 찾지 못했습니다. 화면 전체가 보이게 캡처해주세요.");
+  return applied;
 }
-function applyStatsScreen(runs,colorData,W,H){
+function applyStatsScreen(runs,colorData,W,H,skip){
   // 앵커 = 각 카드의 '공격' 라벨 (2열×3행)
-  const anchors=slotify(runs.filter(r=>r.t==="공격"&&r.yc>H*0.15),W,H,0.34);
-  let applied=0;
+  let anchors=slotify(runs.filter(r=>r.t==="공격"&&r.yc>H*0.15),W,H,0.34);
+  if(skip)anchors=anchors.filter(a=>!skip.has(a.slot));
+  const applied=[];
   // 셀 배치: (행 오프셋, 좌/우) — HP|특공 / 공격|특방 / 방어|스피드
   const CELLS={hp:[-0.042,0],spa:[-0.042,1],atk:[0,0],spd:[0,1],def:[0.042,0],spe:[0.042,1]};
   for(const a of anchors){
@@ -1504,10 +1666,9 @@ function applyStatsScreen(runs,colorData,W,H){
     const mon=exist&&exist.species===id?exist:newMon(id);
     mon.species=id;mon.pts=pts;mon.nature=natureFrom(up,dn);
     party().mons[a.slot]=mon;
-    applied++;
+    applied.push(a.slot);
   }
-  pstatus(applied?"스테이터스 화면 등록 완료: "+applied+"마리 (노력치·성격 화살표 인식)":
-    "스테이터스 카드를 찾지 못했습니다. 화면 전체가 보이게 캡처해주세요.");
+  return applied;
 }
 function arrowColor(colorData,W,H,x0,x1,y0,y1){
   x0=Math.max(0,Math.round(x0));x1=Math.min(W-1,Math.round(x1));

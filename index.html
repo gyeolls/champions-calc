@@ -83,6 +83,7 @@ th{font-size:11px;color:var(--tx2);text-align:left;padding:4px 6px;border-bottom
 td{padding:5px 6px;border-bottom:1px solid var(--line2);vertical-align:middle}
 .dmgbar{position:relative;height:14px;background:var(--panel2);border-radius:4px;overflow:hidden;min-width:90px}
 .dmgbar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;opacity:.85}
+.dmgbar i.dmgdiv{width:1px;border-radius:0;background:rgba(0,0,0,.5);opacity:1;top:2px;bottom:2px}
 .dmgtx{font-variant-numeric:tabular-nums;white-space:nowrap}
 .ko1{color:var(--red);font-weight:700}
 .ko2{color:var(--yel);font-weight:600}
@@ -178,6 +179,7 @@ canvas.hidden{display:none}
     <div class="stats" id="oppStats"></div>
     <div class="fld"><label>폼</label><select id="oppForm"></select></div>
     <div class="fld"><label>특성</label><select id="oppAb"></select></div>
+    <div class="fld" id="oppCurTypeRow" style="display:none"><label>현재 속성</label><button class="btn" id="oppCurType">원래 타입</button></div>
     <div class="fld"><label>아이템</label><button class="btn itemBtn" id="oppItemBtn">—</button></div>
     <div class="fld"><label>성격</label><select id="oppNat"></select></div>
     <div class="fld"><label>노력치</label><select id="oppSp"></select></div>
@@ -225,9 +227,13 @@ canvas.hidden{display:none}
     <div class="stats" id="myStats"></div>
     <div class="fld"><label>폼</label><select id="myForm"></select></div>
     <div class="fld"><label>특성</label><select id="myAb"></select></div>
+    <div class="fld" id="myCurTypeRow" style="display:none"><label>현재 속성</label><button class="btn" id="myCurType">원래 타입</button></div>
     <div class="fld"><label>아이템</label><button class="btn itemBtn" id="myItemBtn">—</button></div>
     <div class="fld"><label>성격</label><button class="btn" id="myNatBtn">—</button></div>
-    <label class="small">노력치 포인트 (각 0~32)</label>
+    <div class="row" style="justify-content:space-between;margin:6px 0 2px">
+      <label class="small">노력치 포인트 (각 0~32)</label>
+      <span class="small" id="myPtsTotal">0/66</span>
+    </div>
     <div class="pts" id="myPts"></div>
     <label class="small">기술</label>
     <div class="mv4" id="myMoves"></div>
@@ -297,6 +303,17 @@ canvas.hidden{display:none}
     <button class="btn" id="monClose">완료</button>
   </div>
   <div id="monHolder" style="overflow-y:auto"></div>
+</div></div>
+
+<!-- 현재 속성 선택 (변환자재/리베로) -->
+<div id="typeModal" class="modal"><div class="picker" style="width:min(420px,92vw)">
+  <div class="row" style="margin-bottom:6px">
+    <b style="flex:1">현재 속성 선택</b>
+    <button class="btn" id="typeReset">원래 타입</button>
+    <button class="btn" id="typeClose">닫기</button>
+  </div>
+  <div id="typeGrid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px"></div>
+  <div class="small" style="margin-top:8px">변환자재/리베로는 마지막에 사용한 기술의 타입으로 변합니다. 선택한 타입 기준으로 피격 상성을 계산해요.</div>
 </div></div>
 
 <!-- 아이템 선택 -->
