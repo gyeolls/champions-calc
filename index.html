@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>포켓몬 챔피언스 데미지 계산기</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{
+  --bg:#101418; --panel:#1a2028; --panel2:#222a35; --line:#2e3947; --line2:#232c37;
+  --tx:#e8edf2; --tx2:#93a1b0; --acc:#4da3ff; --red:#ff5d5d; --grn:#4ade80; --yel:#facc15;
+}
+body.light{
+  --bg:#eef1f5; --panel:#ffffff; --panel2:#e9edf3; --line:#d3dae3; --line2:#e4e9ef;
+  --tx:#1b232e; --tx2:#5c6b7a; --acc:#186fd9; --red:#d43a3a; --grn:#1e9e50; --yel:#b8860b;
+}
+body.light .btn.primary{color:#fff}
+body.light .spdWin{background:#d9f2e2;color:#177a41}
+body.light .spdLose{background:#fbdde0;color:#b0303c}
+body.light .spdTie{background:#f6ecc8;color:#8a6d00}
+body.light .pickItem.cur{background:#dff3e6;outline:1px solid var(--grn)}
+body.light .natCell.cur{background:#dff3e6;color:#177a41;border-color:var(--grn)}
+body.light .modal{background:rgba(0,0,0,.35)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Segoe UI','Malgun Gothic',sans-serif;font-size:14px}
+h1{font-size:17px;font-weight:700}
+h2{font-size:13px;color:var(--tx2);letter-spacing:.05em;margin-bottom:8px}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .sp{flex:1}
+.tabbar{display:flex;gap:4px}
+.tabbar button{background:none;border:none;color:var(--tx2);font-size:15px;font-weight:700;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent}
+.tabbar button.on{color:var(--acc);border-color:var(--acc)}
+main{display:grid;grid-template-columns:320px 1fr 320px;gap:12px;padding:12px 16px;align-items:start}
+@media(max-width:1200px){main{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--tx);padding:7px 12px;border-radius:7px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--acc)}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#08111c;font-weight:700}
+.btn.danger:hover{border-color:var(--red);color:var(--red)}
+select,input[type=text],input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--tx);padding:6px 8px;border-radius:6px;font-size:13px;max-width:100%}
+select:focus,input:focus{outline:1px solid var(--acc)}
+label{font-size:12px;color:var(--tx2)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.dropzone{border:2px dashed var(--line);border-radius:8px;padding:14px;text-align:center;color:var(--tx2);font-size:12px;margin-top:8px}
+.dropzone.drag{border-color:var(--acc);color:var(--acc)}
+#captureBar{margin:12px 16px 0;padding:8px 14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-style:dashed}
+#captureBar.drag{border-color:var(--acc)}
+#captureBar .hint{font-size:13px}
+#captureBar .hint b{color:var(--acc)}
+#ocrStatus{font-size:12px;color:var(--tx2);min-height:16px}
+#partyStatus{font-size:12px;color:var(--tx2);margin-top:6px;min-height:16px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:var(--panel2);border:1px solid var(--acc);color:var(--acc);border-radius:14px;padding:3px 10px;font-size:12px;cursor:pointer}
+.chip.mine{border-color:var(--grn);color:var(--grn)}
+.monHead{display:flex;gap:12px;align-items:center}
+.monHead img{width:72px;height:72px;background:var(--panel2);border-radius:10px}
+.monHead .nm{font-size:17px;font-weight:700}
+.types{display:flex;gap:4px;margin-top:4px}
+.tb{font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;color:#fff}
+.stats{margin:10px 0}
+.st{display:grid;grid-template-columns:34px 30px 1fr 34px;gap:6px;align-items:center;font-size:12px;margin:2px 0}
+.st .bar{height:7px;border-radius:4px;background:var(--panel2);overflow:hidden}
+.st .bar i{display:block;height:100%;border-radius:4px}
+.st .rv{text-align:right;color:var(--acc);font-weight:600}
+.fld{display:grid;grid-template-columns:52px 1fr;gap:6px;align-items:center;margin:5px 0}
+.fld select,.fld .btn{width:100%}
+.pts{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.pts div{text-align:center}
+.pts input{width:100%;text-align:center;padding:4px 2px}
+.pts label{font-size:11px}
+.boost{display:grid;grid-template-columns:repeat(5,1fr);gap:4px}
+.boost select{width:100%;padding:4px 2px;text-align:center}
+.mv4{display:grid;grid-template-columns:1fr;gap:6px;margin-top:6px}
+.slots{display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap}
+.slot{width:40px;height:40px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.slot img{width:36px;height:36px}
+.slot.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.slot .empty{color:var(--tx2);font-size:18px}
+#speedSec{padding:0 16px 24px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:11px;color:var(--tx2);text-align:left;padding:4px 6px;border-bottom:1px solid var(--line)}
+td{padding:5px 6px;border-bottom:1px solid var(--line2);vertical-align:middle}
+.dmgbar{position:relative;height:14px;background:var(--panel2);border-radius:4px;overflow:hidden;min-width:90px}
+.dmgbar i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;opacity:.85}
+.dmgtx{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ko1{color:var(--red);font-weight:700}
+.ko2{color:var(--yel);font-weight:600}
+.ko3{color:var(--tx2)}
+.rate{color:var(--tx2);font-size:11px}
+.small{font-size:11px;color:var(--tx2)}
+.warn{color:var(--yel)}
+hr.sep{border:0;border-top:1px solid var(--line);margin:10px 0}
+.togs{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.togs label{display:flex;gap:4px;align-items:center;font-size:12px;cursor:pointer;color:var(--tx)}
+/* 스피드 표 */
+.spdCell{text-align:center;font-variant-numeric:tabular-nums;border-radius:4px;padding:4px 6px}
+.spdWin{background:#14331f;color:var(--grn)}
+.spdLose{background:#3a1720;color:var(--red)}
+.spdTie{background:#38310f;color:var(--yel)}
+.spdMon{display:flex;gap:6px;align-items:center;cursor:pointer}
+.spdMon img{width:30px;height:30px}
+.mySpd{font-size:20px;font-weight:800;color:var(--acc)}
+/* 팝업 공통 */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
+.modal.on{display:flex}
+.picker{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;width:min(560px,92vw);max-height:82vh;display:flex;flex-direction:column}
+.pickList{overflow-y:auto;flex:1;min-height:200px}
+.pickItem{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:13px}
+.pickItem:hover{background:var(--panel2)}
+.pickItem.cur{background:#1d4f2c;outline:1px solid var(--grn)}
+.pickItem img{width:26px;height:26px;object-fit:contain}
+.pickItem .pct{margin-left:auto;color:var(--acc);font-size:12px}
+.pickItem .sub{color:var(--tx2);font-size:11px;margin-left:auto;white-space:nowrap}
+.pickHead{font-size:11px;color:var(--tx2);letter-spacing:.05em;padding:8px 6px 3px;border-bottom:1px solid var(--line);margin-bottom:3px;position:sticky;top:0;background:var(--panel)}
+.itemBtn{display:flex;align-items:center;gap:6px;justify-content:flex-start}
+.itemBtn img{width:22px;height:22px}
+.mvBtn{display:flex;align-items:center;gap:6px;width:100%;justify-content:flex-start;padding:6px 8px}
+.natGrid{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.natGrid table{border-collapse:separate;border-spacing:4px}
+.natGrid th{font-size:12px;padding:4px 6px;border:none}
+.natGrid th.up{color:var(--red)}
+.natGrid th.dn{color:var(--acc)}
+.natGrid td{border:none;padding:0}
+.natCell{min-width:86px;text-align:center;padding:9px 8px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;cursor:pointer;font-size:13px}
+.natCell:hover{border-color:var(--acc)}
+.natCell.neutral{color:var(--tx2)}
+.natCell.cur{background:#1d4f2c;border-color:var(--grn);color:var(--grn);font-weight:700}
+/* 파티 페이지 */
+#pageParty{padding:12px 16px;display:none}
+.partyTabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.ptab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 14px;cursor:pointer;font-size:13px}
+.ptab.on{border-color:var(--acc);color:var(--acc);font-weight:700}
+.partyGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-top:12px}
+.pcard{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;gap:10px}
+.pcard img.spr{width:64px;height:64px;background:var(--panel);border-radius:8px}
+.pcard .info{flex:1;font-size:12px;line-height:1.55}
+.pcard .info b{font-size:14px}
+.pcard .mvs span{display:inline-block;background:var(--panel);border-radius:4px;padding:1px 6px;margin:1px 2px 1px 0}
+.pcard.empty{align-items:center;justify-content:center;color:var(--tx2);min-height:110px}
+canvas.hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚔️ 챔피언스 계산기</h1>
+  <nav class="tabbar">
+    <button id="tabCalc" class="on">계산기</button>
+    <button id="tabParty">내 파티</button>
+  </nav>
+  <div class="sp"></div>
+  <span class="small">Lv.50 고정 · 실시간 채용률 (championsbattledata.com)</span>
+  <button class="btn" id="themeBtn" title="라이트/다크 전환">☀️</button>
+</header>
+
+<!-- ===== 계산기 페이지 ===== -->
+<div id="pageCalc">
+
+<!-- 화면 인식 바 (Ctrl+V 전용) -->
+<div class="panel" id="captureBar">
+  <span class="hint">📋 선출/배틀 화면을 <b>Ctrl+V</b>로 붙여넣기 (또는 이미지 드래그)</span>
+  <div id="ocrStatus"></div>
+  <div class="chips" id="chips"></div>
+</div>
+
+<main>
+  <!-- 상대 -->
+  <section class="panel" id="oppPanel">
+    <h2>상대 팀</h2>
+    <div class="slots" id="oppTeam"></div>
+    <div class="row">
+      <input type="text" id="oppSearch" list="dlMon" placeholder="포켓몬 검색 (한국어)" style="flex:1">
+    </div>
+    <div class="monHead">
+      <img id="oppImg" src="" alt="">
+      <div><div class="nm" id="oppName">—</div><div class="types" id="oppTypes"></div></div>
+    </div>
+    <div class="stats" id="oppStats"></div>
+    <div class="fld"><label>폼</label><select id="oppForm"></select></div>
+    <div class="fld"><label>특성</label><select id="oppAb"></select></div>
+    <div class="fld"><label>아이템</label><button class="btn itemBtn" id="oppItemBtn">—</button></div>
+    <div class="fld"><label>성격</label><select id="oppNat"></select></div>
+    <div class="fld"><label>노력치</label><select id="oppSp"></select></div>
+    <label class="small">랭크 (공/방/특공/특방/스피드)</label>
+    <div class="boost" id="oppBoost"></div>
+    <div class="togs" style="margin-top:6px">
+      <label><input type="checkbox" id="oppBurn"> 화상</label>
+      <label><input type="checkbox" id="oppScreen"> 벽 데미지 감소</label>
+    </div>
+    <hr class="sep">
+    <div class="row">
+      <label>날씨 <select id="weather">
+        <option value="none">없음</option><option value="sun">쾌청</option><option value="rain">비</option>
+        <option value="sand">모래바람</option><option value="snow">설경</option>
+      </select></label>
+      <label>필드 <select id="terrain">
+        <option value="none">없음</option><option value="electric">일렉트릭</option><option value="grassy">그래스</option>
+        <option value="psychic">사이코</option><option value="misty">미스트</option>
+      </select></label>
+    </div>
+  </section>
+
+  <!-- 데미지 결과 (가운데) -->
+  <section class="panel" id="midPanel">
+    <h2 id="titleOppAtk">상대 → 내 포켓몬 (채용률순)</h2>
+    <table><thead><tr><th>기술</th><th>채용률</th><th>데미지</th><th></th><th>결정타수</th></tr></thead>
+    <tbody id="tblOpp"></tbody></table>
+    <hr class="sep">
+    <h2 id="titleMyAtk">내 포켓몬 → 상대</h2>
+    <table><thead><tr><th>기술</th><th></th><th>데미지</th><th></th><th>결정타수</th></tr></thead>
+    <tbody id="tblMy"></tbody></table>
+  </section>
+
+  <!-- 내 포켓몬 -->
+  <section class="panel" id="myPanel">
+    <h2>내 포켓몬 <span class="small" id="myPartyName"></span></h2>
+    <div class="slots" id="slots"></div>
+    <div class="row">
+      <input type="text" id="mySearch" list="dlMon" placeholder="포켓몬 검색 (한국어)" style="flex:1">
+    </div>
+    <div class="monHead">
+      <img id="myImg" src="" alt="">
+      <div><div class="nm" id="myName">—</div><div class="types" id="myTypes"></div></div>
+    </div>
+    <div class="stats" id="myStats"></div>
+    <div class="fld"><label>폼</label><select id="myForm"></select></div>
+    <div class="fld"><label>특성</label><select id="myAb"></select></div>
+    <div class="fld"><label>아이템</label><button class="btn itemBtn" id="myItemBtn">—</button></div>
+    <div class="fld"><label>성격</label><button class="btn" id="myNatBtn">—</button></div>
+    <label class="small">노력치 포인트 (각 0~32)</label>
+    <div class="pts" id="myPts"></div>
+    <label class="small">기술</label>
+    <div class="mv4" id="myMoves"></div>
+    <label class="small">랭크 (공/방/특공/특방/스피드)</label>
+    <div class="boost" id="myBoost"></div>
+    <div class="togs" style="margin-top:6px">
+      <label><input type="checkbox" id="myBurn"> 화상</label>
+      <label><input type="checkbox" id="myScreen"> 벽 데미지 감소</label>
+      <label><input type="checkbox" id="crit"> 급소 가정</label>
+    </div>
+  </section>
+</main>
+
+<!-- 스피드 비교 -->
+<section id="speedSec">
+  <div class="panel">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">스피드 비교 — 내 <span id="spdMyName">포켓몬</span> 실수치: <span class="mySpd" id="spdMyVal">—</span></h2>
+      <div class="togs">
+        <label><input type="checkbox" id="twMy"> 내 순풍</label>
+        <label><input type="checkbox" id="twOpp"> 상대 순풍</label>
+        <label><input type="checkbox" id="trickRoom"> 트릭룸</label>
+      </div>
+    </div>
+    <table><thead><tr>
+      <th>상대</th><th>최저 (0·↓)</th><th>무보정 (0)</th><th>준속 (32)</th><th>최속 (32·↑)</th><th>최속+스카프</th><th>추정 세트</th>
+    </tr></thead><tbody id="spdTbl"></tbody></table>
+    <div class="small" style="margin-top:4px">초록 = 내가 선공 · 빨강 = 상대 선공 · 노랑 = 동속. 상대 팀에서 폼(메가 등)을 바꾸면 이 표에도 고정 반영됩니다. 행 클릭 시 해당 포켓몬을 상대로 지정.</div>
+  </div>
+</section>
+</div>
+
+<!-- ===== 내 파티 페이지 ===== -->
+<div id="pageParty">
+  <div class="panel">
+    <h2>파티 관리</h2>
+    <div class="partyTabs" id="partyTabs"></div>
+    <div class="row">
+      <button class="btn" id="btnNewParty">+ 새 파티</button>
+      <button class="btn" id="btnRenParty">이름 변경</button>
+      <button class="btn danger" id="btnDelParty">파티 삭제</button>
+    </div>
+    <hr class="sep">
+    <h2>이미지로 등록</h2>
+    <div class="small">게임의 <b>내 파티 → 능력</b> 화면과 <b>스테이터스</b> 화면을 캡처해서 순서 상관없이 넣어주세요.
+      능력 화면 → 특성·아이템·기술 / 스테이터스 화면 → 노력치·성격(화살표 색) 자동 등록.</div>
+    <div class="dropzone" id="partyDrop">여기에 <b>Ctrl+V</b> 붙여넣기 · 드래그&드롭 · <u id="partyFilePick" style="cursor:pointer">파일 선택</u></div>
+    <input type="file" id="partyFile" accept="image/*" style="display:none" multiple>
+    <div id="partyStatus"></div>
+    <div class="partyGrid" id="partyGrid"></div>
+    <div class="small" style="margin-top:8px">카드를 클릭하면 바로 세부 수정할 수 있어요. 파티는 브라우저에 자동 저장됩니다.</div>
+  </div>
+</div>
+
+<!-- 성격 선택 그리드 -->
+<div id="natModal" class="modal"><div class="natGrid">
+  <div class="row" style="justify-content:space-between;margin-bottom:6px">
+    <b>성격 선택</b><span class="small">행 = 상승(빨강) · 열 = 하락(파랑)</span>
+    <button class="btn" id="natClose">닫기</button>
+  </div>
+  <table id="natTable"></table>
+</div></div>
+
+<!-- 파티 탭 포켓몬 편집 (계산기 패널 재사용) -->
+<div id="monModal" class="modal"><div class="picker" style="width:min(430px,94vw)">
+  <div class="row" style="justify-content:flex-end;margin-bottom:4px">
+    <button class="btn" id="monClose">완료</button>
+  </div>
+  <div id="monHolder" style="overflow-y:auto"></div>
+</div></div>
+
+<!-- 아이템 선택 -->
+<div id="itemModal" class="modal"><div class="picker">
+  <div class="row" style="margin-bottom:6px">
+    <b style="flex:1">아이템 선택</b>
+    <button class="btn" id="itemNone">아이템 없음</button>
+    <button class="btn" id="itemClose">닫기</button>
+  </div>
+  <input type="text" id="itemSearch" placeholder="아이템 이름 검색..." style="width:100%;margin-bottom:8px">
+  <div class="pickList" id="itemList"></div>
+</div></div>
+
+<!-- 기술 선택 -->
+<div id="mvModal" class="modal"><div class="picker">
+  <div class="row" style="margin-bottom:6px">
+    <b style="flex:1" id="mvTitle">기술 선택</b>
+    <button class="btn" id="mvNone">비우기</button>
+    <button class="btn" id="mvClose">닫기</button>
+  </div>
+  <input type="text" id="mvSearch" placeholder="기술 이름 검색..." style="width:100%;margin-bottom:8px">
+  <div class="pickList" id="mvList"></div>
+</div></div>
+
+<datalist id="dlMon"></datalist>
+<datalist id="dlMove"></datalist>
+<canvas id="work" class="hidden"></canvas>
+
+<script src="data.js"></script>
+<script src="spriteindex.js"></script>
+<script src="matcher.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
