@@ -605,6 +605,7 @@ function openTypePicker(side){
     const b=document.createElement("button");
     b.className="btn";
     b.style.background=TYPE_COLORS[t];b.style.color="#fff";b.style.borderColor="transparent";
+    b.style.whiteSpace="nowrap";b.style.padding="8px 2px";b.style.fontSize="13px";b.style.textAlign="center";
     if(cfg&&cfg.curType===t)b.style.outline="2px solid var(--tx)";
     b.textContent=DB.typesKo[t]||t;
     b.onclick=()=>{pickCurType(t);};
