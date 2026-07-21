@@ -558,6 +558,8 @@ function boostSelects(el,boosts,onCh){
 function spriteUrl(c){return c&&c.sprite?`assets/sprites/${c.sprite}.webp`:"";}
 
 // ===== 상대 =====
+let oppRev=0; // 상대 설정 수동 변경 추적 (비동기 채용률 갱신이 사용자의 수동 설정을 덮어쓰지 않도록)
+function markOppEdited(){oppRev++;}
 function setOpp(id){
   const rb=resolveToBase(id);
   state.opp.species=rb.species;
@@ -566,10 +568,11 @@ function setOpp(id){
   const disp=cre(rb.species);
   $("oppSearch").value=rb.species?(disp._label||disp.ko):"";
   renderOpp();
-  // 실시간 채용률 갱신 후 재적용
+  // 실시간 채용률 갱신 후 재적용 (그 사이 수동 편집이 없었을 때만)
   const uid=usageIdFor(state.opp);
+  const rev=oppRev;
   requestLive(uid,()=>{
-    if(usageIdFor(state.opp)===uid){applyOppUsageDefaults();renderOpp();}
+    if(usageIdFor(state.opp)===uid&&oppRev===rev){applyOppUsageDefaults();renderOpp();}
   });
 }
 function applyOppUsageDefaults(){
@@ -610,6 +613,7 @@ function openTypePicker(side){
   $("typeModal").classList.add("on");
 }
 function pickCurType(t){
+  if(typePickTarget==="opp")markOppEdited();
   const cfg=typePickTarget==="opp"?state.opp:mySel();
   if(cfg){cfg.curType=t;if(typePickTarget!=="opp")save();}
   $("typeModal").classList.remove("on");
@@ -729,7 +733,7 @@ function renderItemList(q){
     .forEach(id=>add(id,""));
 }
 function pickItem(id){
-  if(itemPickTarget==="opp"){state.opp.item=id;renderOpp();}
+  if(itemPickTarget==="opp"){markOppEdited();state.opp.item=id;renderOpp();}
   else{const m=mySel();if(m){m.item=id;save();renderMy();renderPartyPage();}}
   $("itemModal").classList.remove("on");
 }
@@ -1159,6 +1163,7 @@ $("oppSearch").addEventListener("change",e=>{
   if(id)setOpp(id);
 });
 $("oppForm").onchange=e=>{
+  markOppEdited();
   const o=state.opp;
   o.forme=e.target.value===o.species?"":e.target.value;
   // 상대 팀 슬롯에 폼 고정 → 스피드 비교표에도 반영
@@ -1166,10 +1171,11 @@ $("oppForm").onchange=e=>{
   if(idx>=0){state.oppTeam[idx]=o.forme||o.species;save();}
   renderOpp();
 };
-$("oppAb").onchange=e=>{state.opp.ability=e.target.value;renderOpp();};
+$("oppAb").onchange=e=>{markOppEdited();state.opp.ability=e.target.value;renderOpp();};
 $("oppCurType").onclick=()=>openTypePicker("opp");
 $("myCurType").onclick=()=>openTypePicker("my");
 $("typeReset").onclick=()=>{
+  if(typePickTarget==="opp")markOppEdited();
   const cfg=typePickTarget==="opp"?state.opp:mySel();
   if(cfg){cfg.curType="";if(typePickTarget!=="opp")save();}
   $("typeModal").classList.remove("on");
@@ -1178,8 +1184,9 @@ $("typeReset").onclick=()=>{
 $("typeClose").onclick=()=>$("typeModal").classList.remove("on");
 $("typeModal").onclick=e=>{if(e.target.id==="typeModal")$("typeModal").classList.remove("on");};
 $("oppItemBtn").onclick=()=>{if(state.opp.species)openItemPicker("opp");};
-$("oppNat").onchange=e=>{state.opp.nature=e.target.value;renderOpp();};
+$("oppNat").onchange=e=>{markOppEdited();state.opp.nature=e.target.value;renderOpp();};
 $("oppSp").onchange=e=>{
+  markOppEdited();
   const u=usageOf(state.opp.species);if(!u)return;
   const sp=u.sp[+e.target.value];if(!sp)return;
   state.opp.pts={hp:0,atk:0,def:0,spa:0,spd:0,spe:0};
