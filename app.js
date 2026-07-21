@@ -631,7 +631,8 @@ function renderOppTeam(){
     d.oncontextmenu=e=>{e.preventDefault();state.oppTeam[i]=null;save();renderOppTeam();renderSpeed();};
     el.appendChild(d);
   });
-  const clr=document.createElement("button");clr.className="btn";clr.textContent="비우기";clr.style.padding="4px 8px";
+  const clr=document.createElement("div");
+  clr.className="slot clear";clr.textContent="✕";clr.title="상대 팀 비우기";
   clr.onclick=()=>{state.oppTeam=[null,null,null,null,null,null];save();renderOppTeam();renderSpeed();};
   el.appendChild(clr);
 }
@@ -1138,11 +1139,14 @@ function switchTab(t){
   if(typeof closeMonModal==="function"&&monPanelMarker.parentElement)closeMonModal();
   $("tabCalc").classList.toggle("on",t==="calc");
   $("tabParty").classList.toggle("on",t==="party");
+  $("tabHelp").classList.toggle("on",t==="help");
   $("pageCalc").style.display=t==="calc"?"":"none";
   $("pageParty").style.display=t==="party"?"block":"none";
+  $("pageHelp").style.display=t==="help"?"block":"none";
 }
 $("tabCalc").onclick=()=>switchTab("calc");
 $("tabParty").onclick=()=>switchTab("party");
+$("tabHelp").onclick=()=>switchTab("help");
 
 // ===== 테마 (라이트/다크) =====
 function applyTheme(t){
@@ -1236,6 +1240,12 @@ $("btnNewParty").onclick=()=>{
 $("btnRenParty").onclick=()=>{
   const name=prompt("파티 이름",party().name);
   if(name){party().name=name;save();renderPartyPage();renderSlots();}
+};
+$("btnResetParty").onclick=()=>{
+  if(!confirm(`"${party().name}" 파티를 정말로 초기화하나요?\n등록된 포켓몬 6마리가 모두 비워집니다.`))return;
+  party().mons=[null,null,null,null,null,null];
+  state.meSel=0;
+  save();renderPartyPage();renderMy();
 };
 $("btnDelParty").onclick=()=>{
   if(state.parties.length<=1){alert("마지막 파티는 삭제할 수 없어요.");return;}
